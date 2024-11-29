@@ -3,7 +3,7 @@
 ## Run
 
 ```
-celery -A celery_app worker --loglevel=INFO
+celery -A tasks worker --loglevel=INFO
 ```
 
 Running in development mode:
