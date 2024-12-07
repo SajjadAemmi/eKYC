@@ -1,40 +1,51 @@
-# STEP 1: Import the necessary modules.
+import io
+from fastapi import FastAPI, UploadFile, HTTPException
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from visualization import display_batch_of_images_with_gestures_and_hand_landmarks
+from PIL import Image as PILImage
+import numpy as np
 
 
-# STEP 2: Create an GestureRecognizer object.
+app = FastAPI()
+
 base_options = python.BaseOptions(model_asset_path="gesture_recognizer.task")
 options = vision.GestureRecognizerOptions(base_options=base_options)
 recognizer = vision.GestureRecognizer.create_from_options(options)
 
-IMAGE_FILENAMES = [
-    "assets/thumbs_down.jpg",
-    "assets/victory.jpg",
-    "assets/thumbs_up.jpg",
-    "assets/pointing_up.jpg",
-]
 
-images = []
-results = []
-for image_file_name in IMAGE_FILENAMES:
-    # STEP 3: Load the input image.
-    image = mp.Image.create_from_file(image_file_name)
+@app.post("/recognize-gesture")
+async def recognize_gesture(file: UploadFile):
+    """
+    API endpoint to recognize gestures from an uploaded image.
+    """
+    # Check if the uploaded file is an image
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Uploaded file must be an image.")
 
-    # STEP 4: Recognize gestures in the input image.
-    recognition_result = recognizer.recognize(image)
+    image_data = await file.read()
 
-    # STEP 5: Process the result. In this case, visualize it.
-    images.append(image)
-    top_gesture = recognition_result.gestures[0][0]
-    hand_landmarks = recognition_result.hand_landmarks
-    results.append((
-        top_gesture, 
-        # hand_landmarks
-        ))
+    try:
+        pil_image = PILImage.open(io.BytesIO(image_data)).convert("RGB")
+        image_array = np.array(pil_image)
+        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_array)
 
-print(results)
+    except Exception as e:
+        raise HTTPException(
+            status_code=400, detail=f"Failed to process image: {str(e)}"
+        )
 
-# display_batch_of_images_with_gestures_and_hand_landmarks(images, results)
+    try:
+        # Perform gesture recognition
+        recognition_result = recognizer.recognize(image)
+
+        # Extract the top recognized gesture
+        if not recognition_result.gestures or not recognition_result.gestures[0]:
+            raise HTTPException(status_code=400, detail="No gesture recognized.")
+
+        top_gesture = recognition_result.gestures[0][0]
+        return {"gesture": top_gesture.category_name, "score": top_gesture.score}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Gesture recognition failed: {str(e)}"
+        )
